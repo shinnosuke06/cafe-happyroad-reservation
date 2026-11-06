@@ -1,0 +1,16 @@
+{
+  "name": "cafe-happyroad-reservation",
+  "version": "1.0.0",
+  "description": "cafe ハッピーロードの予約管理システム（Web予約ページとスタッフ用の予約台帳）",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
+  }
+}

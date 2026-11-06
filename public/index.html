@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ご予約 | cafe ハッピーロード</title>
+  <meta name="description" content="cafe ハッピーロードのWeb予約ページです。">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/reserve.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12v4a6 6 0 0 1-12 0z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3c-.8 1.2.8 2 0 3.2M12 3c-.8 1.2.8 2 0 3.2"/><path d="M4 21h12"/></svg>
+        </span>
+        <span>
+          <span class="brand-name" data-store-name>cafe ハッピーロード</span>
+          <span class="brand-sub">Web予約</span>
+        </span>
+      </a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero" id="hero">
+      <h1>ご予約</h1>
+      <p>日付・人数・時間を選んで、お名前と電話番号を入力してください。</p>
+    </section>
+
+    <form id="reserve-form" class="booking" novalidate>
+      <section class="card" aria-labelledby="step1">
+        <h2 class="step" id="step1"><span class="step-no">1</span>日付と人数</h2>
+        <div class="date-strip" id="date-strip" aria-label="日付を選ぶ"></div>
+        <div class="grid-2">
+          <label class="field">
+            <span>日付（カレンダー）</span>
+            <input type="date" id="date" name="date" required>
+          </label>
+          <label class="field">
+            <span>人数</span>
+            <select id="party" name="partySize"></select>
+          </label>
+        </div>
+        <p class="hint" id="party-hint" hidden></p>
+      </section>
+
+      <section class="card" aria-labelledby="step2">
+        <h2 class="step" id="step2"><span class="step-no">2</span>来店時間</h2>
+        <p class="hint" id="slot-message" aria-live="polite">空き状況を読み込んでいます…</p>
+        <div class="slots" id="slots" role="radiogroup" aria-labelledby="step2"></div>
+      </section>
+
+      <section class="card" aria-labelledby="step3">
+        <h2 class="step" id="step3"><span class="step-no">3</span>お客様の情報</h2>
+        <div class="fields">
+          <label class="field">
+            <span>お名前<em class="req">必須</em></span>
+            <input name="name" autocomplete="name" maxlength="50" placeholder="例：山田 花子" required>
+          </label>
+          <label class="field">
+            <span>電話番号<em class="req">必須</em></span>
+            <input name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="20" placeholder="例：090-1234-5678" required>
+          </label>
+          <label class="field">
+            <span>メールアドレス<em class="opt">任意</em></span>
+            <input name="email" type="email" autocomplete="email" maxlength="254" placeholder="例：hanako@example.com">
+          </label>
+          <label class="field">
+            <span>ご要望<em class="opt">任意</em></span>
+            <textarea name="note" maxlength="500" placeholder="例：ベビーカーで伺います／誕生日のお祝いです"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <div class="summary pending" id="summary">時間を選んでください</div>
+      <p class="form-error" id="form-error" role="alert"></p>
+      <button class="btn btn-primary btn-block" type="submit" id="submit">この内容で予約する</button>
+    </form>
+
+    <section class="card done" id="done" hidden tabindex="-1" aria-labelledby="done-title">
+      <div class="done-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      </div>
+      <h2 id="done-title">ご予約を承りました</h2>
+      <p class="muted">ご来店をお待ちしております。</p>
+      <div class="code-box">
+        <div class="label">予約番号</div>
+        <div class="code" id="done-code"></div>
+      </div>
+      <dl class="details" id="done-details"></dl>
+      <p class="hint done-hint">予約番号は、予約の確認・キャンセルのときに使います。<br>スクリーンショットなどで控えてください。</p>
+      <button class="btn" type="button" id="book-again">別の予約をする</button>
+    </section>
+
+    <section class="card lookup" id="lookup" aria-labelledby="lookup-title">
+      <h2 id="lookup-title">予約の確認・キャンセル</h2>
+      <p class="card-sub">予約番号と、予約のときの電話番号を入力してください。</p>
+      <form id="lookup-form" class="fields" novalidate>
+        <div class="grid-2">
+          <label class="field">
+            <span>予約番号</span>
+            <input name="code" maxlength="10" autocomplete="off" autocapitalize="characters" placeholder="例：AB3CD4" required>
+          </label>
+          <label class="field">
+            <span>電話番号</span>
+            <input name="phone" type="tel" inputmode="tel" maxlength="20" autocomplete="tel" required>
+          </label>
+        </div>
+        <p class="form-error" id="lookup-error" role="alert"></p>
+        <button class="btn" type="submit">予約を確認する</button>
+      </form>
+      <div class="lookup-result" id="lookup-result" hidden></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap" id="store-info"></div>
+  </footer>
+</body>
+</html>

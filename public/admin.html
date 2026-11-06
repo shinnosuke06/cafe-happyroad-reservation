@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>予約管理 | cafe ハッピーロード</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/admin.js"></script>
+</head>
+<body>
+  <!-- ログイン -->
+  <div class="login" id="login-view" hidden>
+    <form class="card login-card" id="login-form" novalidate>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12v4a6 6 0 0 1-12 0z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3c-.8 1.2.8 2 0 3.2M12 3c-.8 1.2.8 2 0 3.2"/><path d="M4 21h12"/></svg>
+        </span>
+        <span>
+          <span class="brand-name">cafe ハッピーロード</span>
+          <span class="brand-sub">スタッフ用</span>
+        </span>
+      </div>
+      <h1>予約管理にログイン</h1>
+      <label class="field">
+        <span>パスワード</span>
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <p class="form-error" id="login-error" role="alert"></p>
+      <button class="btn btn-primary btn-block" type="submit">ログイン</button>
+    </form>
+  </div>
+
+  <!-- 管理画面 -->
+  <div id="app-view" hidden>
+    <header class="admin-header">
+      <div class="admin-bar">
+        <a class="brand" href="/admin">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12v4a6 6 0 0 1-12 0z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3c-.8 1.2.8 2 0 3.2M12 3c-.8 1.2.8 2 0 3.2"/><path d="M4 21h12"/></svg>
+          </span>
+          <span>
+            <span class="brand-name" data-store-name>cafe ハッピーロード</span>
+            <span class="brand-sub">予約管理</span>
+          </span>
+        </a>
+        <nav class="tabs" role="tablist" aria-label="メニュー">
+          <button type="button" role="tab" data-tab="book" aria-selected="true">予約台帳</button>
+          <button type="button" role="tab" data-tab="search" aria-selected="false">検索</button>
+          <button type="button" role="tab" data-tab="settings" aria-selected="false">設定</button>
+        </nav>
+        <button type="button" class="btn btn-ghost btn-sm" id="logout">ログアウト</button>
+      </div>
+    </header>
+
+    <main class="admin-main">
+      <!-- 予約台帳 -->
+      <section data-panel="book" role="tabpanel">
+        <div class="day-toolbar">
+          <div class="day-heading">
+            <h2 id="day-title"></h2>
+            <span class="badge" id="day-tag" hidden></span>
+          </div>
+          <div class="day-nav">
+            <button type="button" class="btn btn-icon" id="prev-day" aria-label="前の日">‹</button>
+            <button type="button" class="btn btn-sm" id="go-today">今日</button>
+            <button type="button" class="btn btn-icon" id="next-day" aria-label="次の日">›</button>
+            <input type="date" id="day-picker" aria-label="日付を選ぶ">
+          </div>
+          <div class="toolbar-actions">
+            <div class="segmented" role="group" aria-label="表示">
+              <button type="button" data-view="timeline" aria-pressed="true">タイムライン</button>
+              <button type="button" data-view="list" aria-pressed="false">リスト</button>
+            </div>
+            <button type="button" class="btn btn-primary" id="add-reservation">＋ 予約を追加</button>
+          </div>
+        </div>
+        <div class="banner" id="day-banner" hidden></div>
+        <div class="stats" id="day-stats"></div>
+        <div id="timeline-view">
+          <div class="timeline" id="timeline"></div>
+          <p class="timeline-note" id="timeline-note"></p>
+        </div>
+        <div class="res-list" id="list-view" hidden></div>
+      </section>
+
+      <!-- 検索 -->
+      <section data-panel="search" role="tabpanel" hidden>
+        <label class="field search-box">
+          <span>お名前・電話番号・予約番号で探す</span>
+          <input type="search" id="search-input" placeholder="例：山田 / 5678 / AB3CD4" autocomplete="off">
+        </label>
+        <div class="res-list" id="search-results"></div>
+      </section>
+
+      <!-- 設定 -->
+      <section data-panel="settings" role="tabpanel" hidden>
+        <div class="settings-grid">
+          <form class="card fields" id="settings-form" novalidate>
+            <h2>営業時間と予約の受付</h2>
+            <div class="grid-2">
+              <label class="field"><span>店名</span><input name="storeName" maxlength="50" required></label>
+              <label class="field"><span>お店の電話番号</span><input name="storePhone" type="tel" maxlength="20"></label>
+            </div>
+            <div class="grid-2">
+              <label class="field"><span>開店</span><input name="openTime" type="time" required></label>
+              <label class="field"><span>閉店</span><input name="closeTime" type="time" required></label>
+            </div>
+            <div class="grid-2">
+              <label class="field">
+                <span>予約の間隔</span>
+                <select name="slotMinutes">
+                  <option value="10">10分ごと</option>
+                  <option value="15">15分ごと</option>
+                  <option value="20">20分ごと</option>
+                  <option value="30">30分ごと</option>
+                  <option value="60">1時間ごと</option>
+                </select>
+              </label>
+              <label class="field"><span>1組の利用時間（分）</span><input name="stayMinutes" type="number" min="15" max="600" step="5" required></label>
+            </div>
+            <div class="grid-2">
+              <label class="field"><span>Web予約の最大人数</span><input name="maxPartySize" type="number" min="1" max="50" required></label>
+              <label class="field"><span>何日先まで受け付けるか</span><input name="bookingDaysAhead" type="number" min="0" max="365" required></label>
+            </div>
+            <label class="field">
+              <span>当日のWeb予約は来店の何分前まで</span>
+              <input name="minNoticeMinutes" type="number" min="0" max="2880" step="5" required>
+            </label>
+            <fieldset class="field plain">
+              <legend>定休日</legend>
+              <div class="weekday-picks" id="weekday-picks"></div>
+            </fieldset>
+            <p class="form-error" id="settings-error" role="alert"></p>
+            <div class="form-actions"><button class="btn btn-primary" type="submit">設定を保存</button></div>
+          </form>
+
+          <div class="settings-side">
+            <section class="card">
+              <h2>テーブル</h2>
+              <p class="card-sub">Web予約は、人数に合う一番小さい空きテーブルに自動で入ります。変更はその場で保存されます。</p>
+              <div class="table-rows" id="table-rows"></div>
+              <form class="inline-form" id="add-table-form" novalidate>
+                <label class="field"><span>テーブル名</span><input name="name" maxlength="30" placeholder="例：カウンター1" required></label>
+                <label class="field"><span>席数</span><input name="seats" type="number" min="1" max="50" value="2" required></label>
+                <button class="btn" type="submit">追加</button>
+              </form>
+            </section>
+
+            <section class="card">
+              <h2>臨時休業日</h2>
+              <p class="card-sub">この日はWeb予約を受け付けません。</p>
+              <div class="closure-list" id="closure-list"></div>
+              <form class="inline-form closure" id="add-closure-form" novalidate>
+                <label class="field"><span>日付</span><input name="date" type="date" required></label>
+                <label class="field"><span>理由<em class="opt">任意</em></span><input name="reason" maxlength="50" placeholder="例：貸切営業"></label>
+                <button class="btn" type="submit">追加</button>
+              </form>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 予約の追加・編集 -->
+  <dialog id="res-dialog" aria-labelledby="res-dialog-title">
+    <form id="res-form" novalidate>
+      <div class="dialog-head">
+        <div>
+          <h2 id="res-dialog-title">予約を追加</h2>
+          <div class="dialog-meta" id="res-meta"></div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-icon" data-close aria-label="閉じる">×</button>
+      </div>
+      <div class="dialog-body">
+        <div class="grid-2">
+          <label class="field"><span>日付</span><input name="date" type="date" required></label>
+          <label class="field">
+            <span>状態</span>
+            <select name="status">
+              <option value="confirmed">予約</option>
+              <option value="arrived">来店済</option>
+              <option value="cancelled">キャンセル</option>
+              <option value="no_show">無断キャンセル</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid-2">
+          <label class="field"><span>開始</span><input name="time" type="time" step="300" required></label>
+          <label class="field"><span>終了</span><input name="endTime" type="time" step="300" required></label>
+        </div>
+        <div class="grid-2">
+          <label class="field"><span>人数</span><input name="partySize" type="number" min="1" max="99" required></label>
+          <label class="field"><span>テーブル</span><select name="tableId"></select></label>
+        </div>
+        <div class="grid-2">
+          <label class="field"><span>お名前<em class="req">必須</em></span><input name="name" maxlength="50" required></label>
+          <label class="field"><span>電話番号</span><input name="phone" type="tel" maxlength="20"></label>
+        </div>
+        <div class="grid-2">
+          <label class="field"><span>メールアドレス</span><input name="email" type="email" maxlength="254"></label>
+          <label class="field">
+            <span>受付方法</span>
+            <select name="source">
+              <option value="phone">電話</option>
+              <option value="walkin">来店</option>
+              <option value="web">Web</option>
+            </select>
+          </label>
+        </div>
+        <label class="field"><span>メモ・ご要望</span><textarea name="note" maxlength="500"></textarea></label>
+        <p class="form-error" id="res-error" role="alert"></p>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" class="btn btn-danger spacer" id="res-delete">削除</button>
+        <button type="button" class="btn" data-close>閉じる</button>
+        <button type="submit" class="btn btn-primary" id="res-save">保存</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
