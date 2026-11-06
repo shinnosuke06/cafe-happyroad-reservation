@@ -4,28 +4,30 @@ import { rm, readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/app.js';
-import { createNotifier } from '../src/notify.js';
-import { saveImage } from '../src/uploads.js';
+import { openNodeDatabase } from '../src/adapters/node-sqlite.js';
 import { addDays, weekday } from '../src/time.js';
+import { startServer } from '../server.js';
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const ROOT = dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
 const DEMO_DIR = join(ROOT, 'data', 'demo');
 const dbPath = join(DEMO_DIR, 'happyroad.db');
 const password = process.env.ADMIN_PASSWORD || 'happyroad-demo';
+const pepper = 'demo-pepper-not-secret'; // 見本なので秘密ではない
 
 await rm(DEMO_DIR, { recursive: true, force: true });
-const app = await createApp({ dbPath, adminPassword: password, notifier: createNotifier({}) });
+const db = openNodeDatabase(dbPath);
+const app = await createApp({ db, adminPassword: password, pepper });
 const { store, content } = app;
 const today = store.today();
 
-store.updateSettings({
+await store.updateSettings({
   storePhone: '03-1234-5678',
   storeAddress: '東京都〇〇区〇〇 1-2-3（見本）',
   closedWeekdays: [2],
   maxGuestsPerSlot: 20,
 });
 
-const photo = async (name) => (name ? saveImage(app.uploadDir, await readFile(join(ROOT, 'demo', 'photos', `${name}.jpg`))) : '');
+const photo = async (name) => (name ? content.savePhoto(new Uint8Array(await readFile(join(ROOT, 'demo', 'photos', `${name}.jpg`)))) : '');
 const MENU = [
   ['ブレンドコーヒー', 'ドリンク', 480, 'coffee', '深煎りの豆を、一杯ずつ丁寧にいれています。'],
   ['カフェラテ', 'ドリンク', 550, 'latte', 'ミルクたっぷりの、やさしい味わいです。'],
@@ -40,30 +42,32 @@ const MENU = [
 ];
 const menu = {};
 for (const [name, category, price, photoName, description, weekdays = [], preorder = true] of MENU) {
-  menu[name] = content.createMenuItem({ name, category, price, description, weekdays, preorder, photo: await photo(photoName) });
+  menu[name] = await content.createMenuItem({ name, category, price, description, weekdays, preorder, photo: await photo(photoName) });
 }
 const item = (name, quantity) => ({ menuItemId: menu[name].id, quantity });
 
-store.addClosure({ date: addDays(today, 12), reason: '設備点検' });
-content.createAnnouncement({
+await store.addClosure({ date: addDays(today, 12), reason: '設備点検' });
+await content.createAnnouncement({
   title: '年末年始の営業について',
   body: '12月31日から1月3日まではお休みをいただきます。1月4日から通常どおり営業いたします。',
   startsOn: today,
   endsOn: addDays(today, 60),
 });
 
-// 今日の予約（スタッフが入れたもの・Webで入ったもの）
-const staff = (time, partySize, name, phone, extra = {}) =>
-  store.createStaffReservation({ date: today, time, partySize, name, phone, ...extra });
-staff('10:00', 2, '山田 花子', '090-1234-5678', { source: 'web', status: 'arrived', items: [item('カフェラテ', 2)] });
-staff('10:30', 4, '佐藤 健', '080-2222-3333', { note: 'ベビーカーあり', status: 'arrived' });
-staff('11:00', 2, '鈴木 美咲', '070-4444-5555', { source: 'web', items: [item('日替わりランチ', 2)], seatRequest: '窓際' });
-staff('12:00', 5, '高橋 一郎', '090-6666-7777', { note: 'お誕生日のお祝い。ケーキにプレートをお願いします', items: [item('自家製チーズケーキ', 1)] });
-staff('12:30', 2, '田中 由美', '03-1234-0000', { source: 'web', seatRequest: '窓際' });
-staff('13:00', 3, '伊藤 誠', '', { source: 'walkin' });
-staff('14:00', 2, '渡辺 さくら', '080-1111-0000', { source: 'web', items: [item('クリームソーダ', 2)] });
-staff('15:00', 4, '中村 大輔', '090-3333-1111');
-staff('15:30', 1, '小林 葵', '070-5555-6666', { source: 'web', status: 'cancelled' });
+// 今日の予約（今日が定休日なら入れない）
+if (weekday(today) !== 2) {
+  const staff = (time, partySize, name, phone, extra = {}) =>
+    store.createStaffReservation({ date: today, time, partySize, name, phone, ...extra });
+  await staff('10:00', 2, '山田 花子', '090-1234-5678', { source: 'web', status: 'arrived', items: [item('カフェラテ', 2)] });
+  await staff('10:30', 4, '佐藤 健', '080-2222-3333', { note: 'ベビーカーあり', status: 'arrived' });
+  await staff('11:00', 2, '鈴木 美咲', '070-4444-5555', { source: 'web', items: [item('日替わりランチ', 2)], seatRequest: '窓際' });
+  await staff('12:00', 5, '高橋 一郎', '090-6666-7777', { note: 'お誕生日のお祝い。ケーキにプレートをお願いします', items: [item('自家製チーズケーキ', 1)] });
+  await staff('12:30', 2, '田中 由美', '03-1234-0000', { source: 'web', seatRequest: '窓際' });
+  await staff('13:00', 3, '伊藤 誠', '', { source: 'walkin' });
+  await staff('14:00', 2, '渡辺 さくら', '080-1111-0000', { source: 'web', items: [item('クリームソーダ', 2)] });
+  await staff('15:00', 4, '中村 大輔', '090-3333-1111');
+  await staff('15:30', 1, '小林 葵', '070-5555-6666', { source: 'web', status: 'cancelled' });
+}
 
 // これから先の予約（お客様がWebで入れたもの）
 let added = 0;
@@ -71,21 +75,18 @@ for (let i = 1; added < 3 && i < 10; i += 1) {
   const date = addDays(today, i);
   if (weekday(date) === 2) continue; // 定休日
   const weekend = [0, 6].includes(weekday(date));
-  const web = (time, partySize, name, phone, extra = {}) =>
-    store.createPublicReservation({ date, time, partySize, name, phone, ...extra });
-  web('11:00', 2, '加藤 翔', '090-0000-1111', {
+  const web = (time, partySize, name, phone, extra = {}) => store.createPublicReservation({ date, time, partySize, name, phone, ...extra });
+  await web('11:00', 2, '加藤 翔', '090-0000-1111', {
     email: 'kato@example.com',
     notifyEmail: true,
     items: [item(weekend ? '季節のフルーツパンケーキ' : 'ナポリタン', 2)],
   });
-  web('12:00', 3, '松本 陽菜', '090-9876-5432', { seatRequest: 'テラス', note: '杖を使っています' });
-  web('13:30', 2, '吉田 恵', '080-7777-2222', { email: 'yoshida@example.com', notifyEmail: true, items: [item('カフェラテ', 1), item('自家製チーズケーキ', 2)] });
+  await web('12:00', 3, '松本 陽菜', '090-9876-5432', { seatRequest: 'テラス', note: '杖を使っています' });
+  await web('13:30', 2, '吉田 恵', '080-7777-2222', { email: 'yoshida@example.com', notifyEmail: true, items: [item('カフェラテ', 1), item('自家製チーズケーキ', 2)] });
   added += 1;
 }
-app.close();
+db.close();
 
 console.log('見本のデータを作りました（data/demo）。');
 console.log(`管理画面のパスワード：${password}`);
-process.env.DB_PATH = dbPath;
-process.env.ADMIN_PASSWORD = password;
-await import('../server.js');
+await startServer({ ...process.env, DB_PATH: dbPath, ADMIN_PASSWORD: password, PASSWORD_PEPPER: pepper });

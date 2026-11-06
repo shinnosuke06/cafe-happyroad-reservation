@@ -1,0 +1,25 @@
+# Cloudflare Workers（無料プラン）の設定
+name = "cafe-happyroad"
+main = "src/worker.js"
+compatibility_date = "2025-06-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+not_found_handling = "none"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "happyroad"
+database_id = "REPLACE_WITH_DATABASE_ID"
+
+[vars]
+STORE_TIMEZONE = "Asia/Tokyo"
+
+# 秘密の値は、ここには書かずに `npx wrangler secret put 名前` で入れる：
+#   ADMIN_PASSWORD   最初の管理画面パスワード（10文字以上）
+#   PASSWORD_PEPPER  パスワードのハッシュに混ぜる長いランダムな文字列（一度決めたら変えない）
+#   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / MAIL_FROM（メールを送るとき）
+#   LINE_CHANNEL_ACCESS_TOKEN / LINE_CHANNEL_SECRET（LINEで送るとき）

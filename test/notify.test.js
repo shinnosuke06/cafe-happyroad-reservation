@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { createHmac } from 'node:crypto';
 import { sendMailBatch, buildMessage, parseAddress, verifyLineSignature, createNotifier } from '../src/notify.js';
+import { connectNodeSocket } from '../src/adapters/node-socket.js';
 
 /** テスト用の小さなメールサーバー。受け取った内容を記録する */
 function fakeSmtpServer({ rejectRecipient } = {}) {
@@ -82,6 +83,7 @@ test('SMTP でまとめて送り、届かない宛先だけ失敗になる', asy
       { to: 'nobody@example.com', subject: '件名B', text: '本文B' },
       { to: 'c@example.com', subject: '件名C', text: '本文C' },
     ],
+    connectNodeSocket,
   );
   server.close();
   assert.deepEqual(results.map((r) => r.ok), [true, false, true]);
@@ -93,18 +95,20 @@ test('SMTP でまとめて送り、届かない宛先だけ失敗になる', asy
 });
 
 test('メールサーバーにつながらないときは全部失敗として返す', async () => {
-  const results = await sendMailBatch({ host: '127.0.0.1', port: 1, secure: 'none', from: 'a@example.com' }, [
-    { to: 'x@example.com', subject: 's', text: 't' },
-  ]);
+  const results = await sendMailBatch(
+    { host: '127.0.0.1', port: 1, secure: 'none', from: 'a@example.com' },
+    [{ to: 'x@example.com', subject: 's', text: 't' }],
+    connectNodeSocket,
+  );
   assert.equal(results[0].ok, false);
 });
 
-test('LINE の署名を確かめる', () => {
-  const body = Buffer.from('{"events":[]}');
+test('LINE の署名を確かめる', async () => {
+  const body = new TextEncoder().encode('{"events":[]}');
   const good = createHmac('sha256', 'secret').update(body).digest('base64');
-  assert.equal(verifyLineSignature(body, good, 'secret'), true);
-  assert.equal(verifyLineSignature(body, good, 'other'), false);
-  assert.equal(verifyLineSignature(body, undefined, 'secret'), false);
+  assert.equal(await verifyLineSignature(body, good, 'secret'), true);
+  assert.equal(await verifyLineSignature(body, good, 'other'), false);
+  assert.equal(await verifyLineSignature(body, undefined, 'secret'), false);
 });
 
 test('LINE は 500人ずつまとめて送る', async () => {
@@ -126,4 +130,7 @@ test('LINE は 500人ずつまとめて送る', async () => {
   assert.equal(calls[0].url, 'https://api.line.me/v2/bot/message/multicast');
   assert.equal(calls[0].auth, 'Bearer token');
   assert.deepEqual(createNotifier({}).status(), { email: false, line: false, lineWebhook: false });
+  // メールはソケットのつなぎ方を渡したときだけ使える
+  assert.equal(createNotifier({ SMTP_HOST: 'smtp.example.com', MAIL_FROM: 'a@example.com' }).status().email, false);
+  assert.equal(createNotifier({ SMTP_HOST: 'smtp.example.com', MAIL_FROM: 'a@example.com' }, { connectSocket: connectNodeSocket }).status().email, true);
 });

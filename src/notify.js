@@ -1,72 +1,57 @@
 // お知らせの送信（メールは SMTP、LINE は Messaging API）。追加のライブラリは使わない。
-import net from 'node:net';
-import tls from 'node:tls';
-import { once } from 'node:events';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+// メールサーバーへのつなぎ方（ソケット）は、Node 用と Cloudflare 用を外から渡す。
+import { randomHex } from './random.js';
 
 const TIMEOUT_MS = 20_000;
+const encoder = new TextEncoder();
+
+function toBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+function withTimeout(promise, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), TIMEOUT_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 // =========================================================
 // メール（SMTP）
 // =========================================================
 
+/** ソケットから SMTP の応答を1つずつ読む */
 class SmtpConnection {
-  constructor(socket) {
-    this.lines = [];
-    this.waiters = [];
-    this.attach(socket);
+  constructor(transport) {
+    this.use(transport);
   }
 
-  attach(socket) {
-    this.socket = socket;
+  use(transport) {
+    this.transport = transport;
     this.buffer = '';
-    socket.setEncoding('utf8');
-    socket.setTimeout(TIMEOUT_MS, () => socket.destroy(new Error('メールサーバーの応答がありません')));
-    this.onData = (chunk) => {
-      this.buffer += chunk;
-      this.flush();
-    };
-    this.onError = (err) => this.fail(err);
-    this.onClose = () => this.fail(new Error('メールサーバーとの接続が切れました'));
-    socket.on('data', this.onData);
-    socket.on('error', this.onError);
-    socket.on('close', this.onClose);
+    this.decoder = new TextDecoder();
   }
 
-  detach() {
-    this.socket.off('data', this.onData);
-    this.socket.off('error', this.onError);
-    this.socket.off('close', this.onClose);
-    this.socket.setTimeout(0);
-    return this.socket;
-  }
-
-  fail(err) {
-    for (const w of this.waiters.splice(0)) w.reject(err);
-    this.closed = err;
-  }
-
-  flush() {
-    let index;
-    while (this.waiters.length > 0 && (index = this.buffer.indexOf('\r\n')) !== -1) {
+  async read() {
+    const lines = [];
+    for (;;) {
+      let index;
+      while ((index = this.buffer.indexOf('\r\n')) === -1) {
+        const chunk = await withTimeout(this.transport.read(), 'メールサーバーの応答がありません');
+        if (chunk == null) throw Object.assign(new Error('メールサーバーとの接続が切れました'), { closed: true });
+        this.buffer += this.decoder.decode(chunk, { stream: true });
+      }
       const line = this.buffer.slice(0, index);
       this.buffer = this.buffer.slice(index + 2);
-      this.lines.push(line);
+      lines.push(line);
       // "250-..." は続きあり、"250 ..." で1つの応答が終わる
-      if (/^\d{3}(?: |$)/.test(line)) {
-        const reply = { code: Number(line.slice(0, 3)), text: this.lines.join('\n') };
-        this.lines = [];
-        this.waiters.shift().resolve(reply);
-      }
+      if (/^\d{3}(?: |$)/.test(line)) return { code: Number(line.slice(0, 3)), text: lines.join('\n') };
     }
-  }
-
-  read() {
-    if (this.closed) return Promise.reject(this.closed);
-    return new Promise((resolve, reject) => {
-      this.waiters.push({ resolve, reject });
-      this.flush();
-    });
   }
 
   async expect(codes) {
@@ -76,13 +61,13 @@ class SmtpConnection {
   }
 
   async command(line, codes) {
-    this.socket.write(`${line}\r\n`);
+    await this.transport.write(`${line}\r\n`);
     return this.expect(codes);
   }
 }
 
 function encodeWord(value) {
-  return /^[\x20-\x7e]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`;
+  return /^[\x20-\x7e]*$/.test(value) ? value : `=?UTF-8?B?${toBase64(encoder.encode(value))}?=`;
 }
 
 /** "お店の名前 <shop@example.com>" を名前とアドレスに分ける */
@@ -95,19 +80,15 @@ export function parseAddress(value) {
 export function buildMessage({ from, to, subject, text, date = new Date() }) {
   // ヘッダーに改行が入らないようにする（ヘッダーの差し込みを防ぐ）
   const oneLine = (value) => String(value).replace(/[\r\n]+/g, ' ');
-  to = oneLine(to);
-  subject = oneLine(subject);
   const sender = parseAddress(oneLine(from));
   const domain = sender.address.split('@')[1] || 'localhost';
-  const body = Buffer.from(text.replace(/\r?\n/g, '\r\n'), 'utf8')
-    .toString('base64')
-    .replace(/.{1,76}/g, '$&\r\n');
+  const body = toBase64(encoder.encode(text.replace(/\r?\n/g, '\r\n'))).replace(/.{1,76}/g, '$&\r\n');
   return [
     `From: ${sender.name ? `${encodeWord(sender.name)} ` : ''}<${sender.address}>`,
-    `To: <${to}>`,
-    `Subject: ${encodeWord(subject)}`,
+    `To: <${oneLine(to)}>`,
+    `Subject: ${encodeWord(oneLine(subject))}`,
     `Date: ${date.toUTCString()}`,
-    `Message-ID: <${randomBytes(12).toString('hex')}@${domain}>`,
+    `Message-ID: <${randomHex(12)}@${domain}>`,
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
@@ -116,37 +97,32 @@ export function buildMessage({ from, to, subject, text, date = new Date() }) {
   ].join('\r\n');
 }
 
-async function openSmtp(config) {
-  const { host, port, secure } = config;
-  const socket =
-    secure === 'ssl' ? tls.connect({ host, port, servername: host }) : net.connect({ host, port });
-  socket.setTimeout(TIMEOUT_MS, () => socket.destroy(new Error('メールサーバーに接続できません')));
-  await once(socket, secure === 'ssl' ? 'secureConnect' : 'connect');
-  const conn = new SmtpConnection(socket);
+async function openSmtp(config, connectSocket) {
+  const transport = await withTimeout(
+    connectSocket({ host: config.host, port: config.port, secure: config.secure }),
+    'メールサーバーに接続できません',
+  );
+  const conn = new SmtpConnection(transport);
   await conn.expect([220]);
   const helo = `EHLO ${config.heloName || 'localhost'}`;
   await conn.command(helo, [250]);
-  if (secure === 'starttls') {
+  if (config.secure === 'starttls') {
     await conn.command('STARTTLS', [220]);
-    const plain = conn.detach();
-    const secured = tls.connect({ socket: plain, servername: host });
-    await once(secured, 'secureConnect');
-    conn.attach(secured);
+    conn.use(await conn.transport.startTls());
     await conn.command(helo, [250]);
   }
   if (config.user) {
-    const token = Buffer.from(`\0${config.user}\0${config.pass ?? ''}`, 'utf8').toString('base64');
-    await conn.command(`AUTH PLAIN ${token}`, [235]);
+    await conn.command(`AUTH PLAIN ${toBase64(encoder.encode(`\0${config.user}\0${config.pass ?? ''}`))}`, [235]);
   }
   return conn;
 }
 
 /** まとめて送る。1通ずつ結果（ok / error）を返す */
-export async function sendMailBatch(config, messages) {
+export async function sendMailBatch(config, messages, connectSocket) {
   const results = messages.map(() => ({ ok: false, error: '' }));
   let conn;
   try {
-    conn = await openSmtp(config);
+    conn = await openSmtp(config, connectSocket);
   } catch (err) {
     for (const r of results) r.error = err.message;
     return results;
@@ -157,12 +133,12 @@ export async function sendMailBatch(config, messages) {
       await conn.command(`MAIL FROM:<${from}>`, [250]);
       await conn.command(`RCPT TO:<${message.to}>`, [250, 251]);
       await conn.command('DATA', [354]);
-      conn.socket.write(`${buildMessage({ ...message, from: config.from })}\r\n.\r\n`);
+      await conn.transport.write(`${buildMessage({ ...message, from: config.from })}\r\n.\r\n`);
       await conn.expect([250]);
       results[i].ok = true;
     } catch (err) {
       results[i].error = err.message;
-      if (conn.closed) {
+      if (err.closed) {
         for (const r of results.slice(i + 1)) r.error = err.message;
         return results;
       }
@@ -170,7 +146,7 @@ export async function sendMailBatch(config, messages) {
     }
   }
   await conn.command('QUIT', [221]).catch(() => {});
-  conn.socket.end();
+  await conn.transport.close();
   return results;
 }
 
@@ -178,16 +154,14 @@ export async function sendMailBatch(config, messages) {
 // LINE（Messaging API）
 // =========================================================
 
-export function verifyLineSignature(rawBody, signature, secret) {
+export async function verifyLineSignature(rawBody, signature, secret) {
   if (!secret || typeof signature !== 'string') return false;
-  const expected = createHmac('sha256', secret).update(rawBody).digest();
-  let given;
-  try {
-    given = Buffer.from(signature, 'base64');
-  } catch {
-    return false;
-  }
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const expected = toBase64(new Uint8Array(await crypto.subtle.sign('HMAC', key, rawBody)));
+  if (expected.length !== signature.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i += 1) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  return diff === 0;
 }
 
 async function linePost(fetchImpl, token, path, body) {
@@ -207,36 +181,33 @@ async function linePost(fetchImpl, token, path, body) {
 // まとめ
 // =========================================================
 
-export function createNotifier(env = process.env, { fetchImpl = globalThis.fetch } = {}) {
+export function createNotifier(env = {}, { fetchImpl = globalThis.fetch, connectSocket = null } = {}) {
   const port = Number(env.SMTP_PORT) || 465;
-  const smtp = env.SMTP_HOST
-    ? {
-        host: env.SMTP_HOST,
-        port,
-        secure: env.SMTP_SECURE || (port === 465 ? 'ssl' : 'starttls'),
-        user: env.SMTP_USER || '',
-        pass: env.SMTP_PASS || '',
-        from: env.MAIL_FROM || env.SMTP_USER || '',
-        heloName: env.SMTP_HELO || 'localhost',
-      }
-    : null;
+  const smtp =
+    env.SMTP_HOST && connectSocket
+      ? {
+          host: env.SMTP_HOST,
+          port,
+          secure: env.SMTP_SECURE || (port === 465 ? 'ssl' : 'starttls'),
+          user: env.SMTP_USER || '',
+          pass: env.SMTP_PASS || '',
+          from: env.MAIL_FROM || env.SMTP_USER || '',
+          heloName: env.SMTP_HELO || 'localhost',
+        }
+      : null;
   const line = env.LINE_CHANNEL_ACCESS_TOKEN
     ? { token: env.LINE_CHANNEL_ACCESS_TOKEN, secret: env.LINE_CHANNEL_SECRET || '' }
     : null;
 
   return {
     status() {
-      return {
-        email: Boolean(smtp && smtp.from),
-        line: Boolean(line),
-        lineWebhook: Boolean(line && line.secret),
-      };
+      return { email: Boolean(smtp && smtp.from), line: Boolean(line), lineWebhook: Boolean(line && line.secret) };
     },
 
     /** messages: [{ to, subject, text }] */
     async sendEmails(messages) {
       if (!smtp || !smtp.from) return messages.map(() => ({ ok: false, error: 'メールの送信設定がありません' }));
-      return sendMailBatch(smtp, messages);
+      return sendMailBatch(smtp, messages, connectSocket);
     },
 
     /** 同じ文面を複数の LINE ユーザーへ（500人ずつ） */
@@ -266,7 +237,7 @@ export function createNotifier(env = process.env, { fetchImpl = globalThis.fetch
       });
     },
 
-    verifyLineSignature(rawBody, signature) {
+    async verifyLineSignature(rawBody, signature) {
       return verifyLineSignature(rawBody, signature, line?.secret);
     },
   };

@@ -14,5 +14,8 @@
     "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\"",
     "reset-password": "node --disable-warning=ExperimentalWarning scripts/reset-password.js",
     "demo": "node --disable-warning=ExperimentalWarning scripts/demo.js"
+  },
+  "devDependencies": {
+    "wrangler": "4.151.0"
   }
 }

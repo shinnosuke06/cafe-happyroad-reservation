@@ -322,7 +322,7 @@ function auditCard() {
       { class: 'form-actions search-box' },
       h('a', { class: 'btn', href: '/api/admin/backup', download: '' }, 'データのバックアップを保存'),
     ),
-    h('p', { class: 'hint' }, 'バックアップには予約・お客様・メニュー・設定が入っています（写真は data/uploads フォルダにあります）。大切に保管してください。'),
+    h('p', { class: 'hint' }, 'バックアップには予約・お客様・メニュー・設定が入っています。お客様の個人情報が入っているので、大切に保管してください。'),
   );
 }
 
