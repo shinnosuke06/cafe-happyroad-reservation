@@ -49,3 +49,11 @@ export function nowInZone(timeZone, now = new Date()) {
     minutes: Number(get('hour')) * 60 + Number(get('minute')),
   };
 }
+
+const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
+
+/** "2026-11-07" → "11月7日(土)" */
+export function formatDateJa(date) {
+  const [, m, d] = date.split('-').map(Number);
+  return `${m}月${d}日(${WEEKDAYS_JA[weekday(date)]})`;
+}
